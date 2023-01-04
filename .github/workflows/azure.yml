@@ -1,0 +1,32 @@
+name: Push To Azure
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+    - name: Prepare ssh keys
+      uses: shimataro/ssh-key-action@v2
+      with:
+        key: ${{ secrets.GIT_AZURE_SSH }}
+        known_hosts: ${{ secrets.AZURE_KNOWN_HOSTS }}
+    - name: Checkout the Repo
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - name: Create report file
+      run: date +%s > report.txt
+    - name: Push zo Azure
+      run: |
+        git config user.name github-actions
+        git config user.email github-actions@github.com
+        git fetch --depth=10000
+        git remote set-url origin ssh.dev.azure.com:v3/NewsCenterInnoLab/NewsCenter/ldap-authenticator
+        git add .
+        git commit -am "Automated report"
+        git push --force

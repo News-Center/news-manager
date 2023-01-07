@@ -2,29 +2,14 @@ version: '3.8'
 
 services:
   postgres:
-    container_name: postgres
-    image: postgres:15
-    ports:
-      - "5432:5432"
-    volumes: 
-      - db:/var/lib/postgres/data 
+  redis:
+    image: redis:6.2-alpine
     restart: always
-    env_file:
-      - .env
-  pgadmin: 
-    image: dpage/pgadmin4
-    container_name: pgadmin
-    depends_on:
-      - postgres
     ports:
-      - "5555:80"
-    env_file:
-      - .env
-    volumes:
-      - pgadmin-data:/var/lib/pgadmin
-    logging:
-      driver: none
-    restart: unless-stopped
+      - '6379:6379'
+    command: redis-server --save 20 1 --loglevel warning
+    volumes: 
+      - redis:/data
 volumes:
   db:
-  pgadmin-data:
+  redis:

@@ -9,7 +9,8 @@ Review the generated code, and it's recommended to run a `npm init` to adjust ba
 ## Development
 ```bash
 # Development server with hot reload (nodemon)
-$ npm run start:dev
+$ npm ci
+$ make up
 
 # Run Tests
 $ npm test

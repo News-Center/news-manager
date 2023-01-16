@@ -14,6 +14,7 @@ import prismaPlugin from "./plugins/prisma";
 import { swaggerOpts, swaggerUiOpts } from "./utils/swagger";
 
 import fastifyRedis from "@fastify/redis";
+import fastifySwagger from "@fastify/swagger";
 
 export function createServer(opts: FastifyServerOptions = {}): FastifyInstance {
     const app = fastify(opts).withTypeProvider<TypeBoxTypeProvider>();
@@ -29,7 +30,11 @@ export function createServer(opts: FastifyServerOptions = {}): FastifyInstance {
         forceESM: true,
     });
 
-    app.register(fastifyRedis);
+    app.register(fastifySwagger);
+
+    app.register(fastifyRedis, {
+        host: process.env.REDIS_HOST ?? "127.0.0.1",
+    });
 
     return app;
 }

@@ -33,9 +33,13 @@ export default async function (fastify: FastifyInstance) {
                     },
                 });
 
-                users.forEach(user => {
-                    usernames.add(user.User[0].username);
-                });
+                if (users.length > 0) {
+                    users.forEach(user => {
+                        if (user.User.length > 0) {
+                            usernames.add(user.User[0].username);
+                        }
+                    });
+                }
             }
 
             const object = {

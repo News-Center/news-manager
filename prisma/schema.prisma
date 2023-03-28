@@ -12,11 +12,11 @@ model Tag {
   createdAt DateTime @default(now())
   updatedAt DateTime
   value     String   @unique @db.VarChar(255)
-  User      User[]
+  users      User[]
 }
 
 model User {
   id       String @id
   username String @unique
-  Tag      Tag[]
+  tags      Tag[]
 }

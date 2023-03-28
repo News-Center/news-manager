@@ -21,33 +21,35 @@ export default async function (fastify: FastifyInstance) {
         async (request, _reply) => {
             const { title, content, tags } = request.body;
 
-            const usernames = new Set<string>();
-
-            for (const tag of tags) {
-                const users = await prisma.tag.findMany({
-                    where: {
-                        value: tag,
+            const usernamesInterestedByTag = await prisma.user.findMany({
+                select: {
+                    username: true,
+                },
+                where: {
+                    tags: {
+                        some: {
+                            value: {
+                                in: tags,
+                            },
+                        },
                     },
-                    select: {
-                        User: true,
-                    },
-                });
-
-                if (users.length > 0) {
-                    users.forEach(user => {
-                        if (user.User.length > 0) {
-                            usernames.add(user.User[0].username);
-                        }
-                    });
-                }
-            }
+                },
+            });
 
             const object = {
-                usernames: Array.from(usernames),
+                usernames: usernamesInterestedByTag,
                 content,
                 title,
             };
-            fastify.redis.publish("mail", JSON.stringify(object));
+
+            try {
+                const result = await fastify.redis.publish("mail", JSON.stringify(object));
+                fastify.log.info(`Published message to ${result} clients`);
+            } catch (err: unknown) {
+                if (err instanceof Error) {
+                    fastify.log.error(`Error publishing message: ${err.message}`);
+                } else fastify.log.error("Error publishing");
+            }
         },
     );
 }

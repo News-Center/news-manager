@@ -53,7 +53,7 @@ export default async function (fastify: FastifyInstance) {
                     return reply.status(400).send({ error: "Could not find channel with name: " + medium });
                 }
 
-                const result = await axios.post(channel.url, JSON.stringify(object));
+                const result = await axios.post(channel.url + "publish", JSON.stringify(object));
                 fastify.log.info(`Published message to ${result} clients`);
                 return reply.status(200).send({ msg: `Published message to ${result} clients` });
             } catch (err: unknown) {

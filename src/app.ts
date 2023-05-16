@@ -12,10 +12,12 @@ const __dirname = dirname(__filename);
 
 import prismaPlugin from "./plugins/prisma";
 import { swaggerOpts, swaggerUiOpts } from "./utils/swagger";
+import cors from "@fastify/cors";
 
 export function createServer(opts: FastifyServerOptions = {}): FastifyInstance {
     const app = fastify(opts).withTypeProvider<TypeBoxTypeProvider>();
 
+    app.register(cors);
     app.register(prismaPlugin);
     app.register(swagger, swaggerOpts);
     app.register(swaggerUI, swaggerUiOpts);

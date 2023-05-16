@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Tag {
-  id        String   @id
+  id       Int @id @default(autoincrement())
   createdAt DateTime @default(now())
   updatedAt DateTime
   value     String   @unique @db.VarChar(255)
@@ -16,7 +16,26 @@ model Tag {
 }
 
 model User {
-  id       String @id
+  id       Int @id @default(autoincrement())
   username String @unique
   tags      Tag[]
+  channels UserOnChannel[]
+}
+
+model Channel {
+  id Int @id @default(autoincrement())
+  name String @unique
+  url String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  users UserOnChannel[]
+}
+
+model UserOnChannel {
+    @@id([userId, channelId])
+    handle String
+    userId Int
+    channelId Int
+    user User @relation(fields: [userId], references: [id])
+    channel Channel @relation(fields: [channelId], references: [id])
 }

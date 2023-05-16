@@ -19,7 +19,6 @@ export function createServer(opts: FastifyServerOptions = {}): FastifyInstance {
     const app = fastify(opts).withTypeProvider<TypeBoxTypeProvider>();
 
     app.register(prismaPlugin);
-
     app.register(swagger, swaggerOpts);
     app.register(swaggerUI, swaggerUiOpts);
 

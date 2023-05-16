@@ -1,4 +1,6 @@
 import { FastifyInstance } from "fastify";
+import axios from "axios";
+
 import { NewsBodyType, NewsResponseSchema } from "../../schema/news";
 
 export default async function (fastify: FastifyInstance) {
@@ -18,10 +20,12 @@ export default async function (fastify: FastifyInstance) {
                 },
             },
         },
-        async (request, _reply) => {
-            const { title, content, tags } = request.body;
+        async (request, reply) => {
+            const { title, content, tags, medium } = request.body;
 
-            const usernamesInterestedByTag = await prisma.user.findMany({
+            // TODO: make use of 3rd table UserOnChannel to get the correct handles
+
+            const usernamesSubscribedToTag = await prisma.user.findMany({
                 select: {
                     username: true,
                 },
@@ -37,18 +41,27 @@ export default async function (fastify: FastifyInstance) {
             });
 
             const object = {
-                usernames: usernamesInterestedByTag,
+                usernames: usernamesSubscribedToTag,
                 content,
                 title,
             };
 
             try {
-                const result = await fastify.redis.publish("mail", JSON.stringify(object));
+                const channel = await prisma.channel.findUnique({ where: { name: medium } });
+
+                if (!channel) {
+                    return reply.status(400).send({ error: "Could not find channel with name: " + medium });
+                }
+
+                const result = await axios.post(channel.url, JSON.stringify(object));
                 fastify.log.info(`Published message to ${result} clients`);
+                return reply.status(200).send({ msg: `Published message to ${result} clients` });
             } catch (err: unknown) {
                 if (err instanceof Error) {
                     fastify.log.error(`Error publishing message: ${err.message}`);
                 } else fastify.log.error("Error publishing");
+
+                return reply.status(400).send({ error: "Error publishing" });
             }
         },
     );

@@ -12,6 +12,7 @@ export const NewsBodySchema = Type.Object({
     title: Type.String(),
     content: Type.String(),
     tags: Type.Array(Type.String()),
+    medium: Type.String(),
 });
 
 export type NewsBodyType = Static<typeof NewsBodySchema>;

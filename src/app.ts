@@ -13,8 +13,6 @@ const __dirname = dirname(__filename);
 import prismaPlugin from "./plugins/prisma";
 import { swaggerOpts, swaggerUiOpts } from "./utils/swagger";
 
-import fastifyRedis from "@fastify/redis";
-
 export function createServer(opts: FastifyServerOptions = {}): FastifyInstance {
     const app = fastify(opts).withTypeProvider<TypeBoxTypeProvider>();
 
@@ -26,10 +24,6 @@ export function createServer(opts: FastifyServerOptions = {}): FastifyInstance {
         dir: join(__dirname, "routes"),
         options: { prefix: "/api/v1" },
         forceESM: true,
-    });
-
-    app.register(fastifyRedis, {
-        host: process.env.REDIS_HOST ?? "127.0.0.1",
     });
 
     return app;

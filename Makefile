@@ -7,7 +7,7 @@ help:
 
 
 up: ## Run a local development environment with Docker Compose.
-	@docker compose up -d --build --force-recreate && npm run start:dev
+	@npm run start:dev
 
 down: ## Stop the Docker Compose local development environment.
 	@docker compose down  

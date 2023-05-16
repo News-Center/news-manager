@@ -12,13 +12,12 @@ export const NewsBodySchema = Type.Object({
     title: Type.String(),
     content: Type.String(),
     tags: Type.Array(Type.String()),
-    medium: Type.String(),
 });
 
 export type NewsBodyType = Static<typeof NewsBodySchema>;
 
 export const NewsResponseSchema = Type.Object({
-    news: Type.Union([NewsSchema, Type.Null()]),
+    receivers: Type.Array(Type.String()),
 });
 
 export type NewsResponseType = Static<typeof NewsResponseSchema>;

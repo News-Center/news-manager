@@ -21,13 +21,23 @@ export default async function (fastify: FastifyInstance) {
             },
         },
         async (request, reply) => {
-            const { title, content, tags, medium } = request.body;
+            const { title, content, tags } = request.body;
 
-            // TODO: make use of 3rd table UserOnChannel to get the correct handles
+            const payload = {
+                title,
+                content,
+                // Note: handle is essentially the username
+                handle: "",
+            };
 
-            const usernamesSubscribedToTag = await prisma.user.findMany({
+            const channelsToTag = await prisma.user.findMany({
                 select: {
-                    username: true,
+                    channels: {
+                        select: {
+                            handle: true,
+                            channel: true,
+                        },
+                    },
                 },
                 where: {
                     tags: {
@@ -40,22 +50,40 @@ export default async function (fastify: FastifyInstance) {
                 },
             });
 
-            const object = {
-                usernames: usernamesSubscribedToTag,
-                content,
-                title,
-            };
+            const handlers = [];
 
             try {
-                const channel = await prisma.channel.findUnique({ where: { name: medium } });
+                for (let i = 0; i < channelsToTag.length; i++) {
+                    const currentChannels = channelsToTag[i].channels;
 
-                if (!channel) {
-                    return reply.status(400).send({ error: "Could not find channel with name: " + medium });
+                    for (let j = 0; j < currentChannels.length; j++) {
+                        const currentChannel = currentChannels[j];
+                        const handle = currentChannel.handle;
+                        const channelUrl = currentChannel.channel.url;
+
+                        payload.handle = handle;
+
+                        const url = channelUrl + "publish";
+                        fastify.log.info(`POST to: ${url}`);
+
+                        const result = await axios.post(url, JSON.stringify(payload), {
+                            headers: {
+                                "Content-Type": "application/json",
+                            },
+                            timeout: 3000,
+                        });
+
+                        if (result.status == 200) {
+                            const msg = `Published message to ${payload.handle} via ${currentChannel.channel.name}`;
+                            fastify.log.info(msg);
+                            handlers.push(handle);
+                        } else {
+                            fastify.log.warn(`Status code was not 200: ${result.status}`);
+                        }
+                    }
                 }
 
-                const result = await axios.post(channel.url + "publish", JSON.stringify(object));
-                fastify.log.info(`Published message to ${result} clients`);
-                return reply.status(200).send({ msg: `Published message to ${result} clients` });
+                return reply.status(200).send({ receivers: handlers });
             } catch (err: unknown) {
                 if (err instanceof Error) {
                     fastify.log.error(`Error publishing message: ${err.message}`);

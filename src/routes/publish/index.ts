@@ -1,7 +1,31 @@
 import { FastifyInstance } from "fastify";
 import axios from "axios";
+import Fuse from "fuse.js";
 
 import { NewsBodyType, NewsResponseSchema } from "../../schema/news";
+
+function fuzzySearchTagsFromText(title: string, content: string, allTags: any) {
+    const searchTargets = [title, ...content.split(" ")];
+    const options = {
+        shouldSort: true,
+        includeScore: true,
+        isCaseSensitive: false,
+        threshold: 0.4,
+    };
+    const fuse = new Fuse(searchTargets, options);
+
+    const relevantTags = [];
+
+    for (const tag of allTags) {
+        const searchResults = fuse.search(tag);
+        const additionalTags = searchResults.map(result => result.item);
+
+        if (additionalTags.length > 0) {
+            relevantTags.push(tag);
+        }
+    }
+    return relevantTags;
+}
 
 export default async function (fastify: FastifyInstance) {
     const { prisma } = fastify;
@@ -30,6 +54,16 @@ export default async function (fastify: FastifyInstance) {
                 handle: "",
             };
 
+            const allTagsData = await prisma.tag.findMany({
+                select: {
+                    value: true,
+                },
+            });
+            const allTags = allTagsData.map(tagData => tagData.value);
+
+            const fuzzySearchTagsFromText1 = fuzzySearchTagsFromText(title, content, allTags);
+            fastify.log.info(`fuzzySearchTagsFromText: ${fuzzySearchTagsFromText1}`);
+
             const channelsToTag = await prisma.user.findMany({
                 select: {
                     channels: {
@@ -43,7 +77,7 @@ export default async function (fastify: FastifyInstance) {
                     tags: {
                         some: {
                             value: {
-                                in: tags,
+                                in: [...fuzzySearchTagsFromText1, ...tags],
                             },
                         },
                     },
@@ -63,7 +97,7 @@ export default async function (fastify: FastifyInstance) {
 
                         payload.handle = handle;
 
-                        const url = channelUrl + "publish";
+                        const url = channelUrl + "/publish";
                         fastify.log.info(`POST to: ${url}`);
 
                         const result = await axios.post(url, JSON.stringify(payload), {

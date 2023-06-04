@@ -4,30 +4,97 @@ import Fuse from "fuse.js";
 
 import { NewsBodyType, NewsResponseSchema } from "../../schema/news";
 
-function fuzzySearchTagsFromText(title: string, content: string, allTags: any) {
-    const searchTargets = [title, ...content.split(" ")];
-    const options = {
-        shouldSort: true,
-        includeScore: true,
-        isCaseSensitive: false,
-        threshold: 0.4,
-    };
-    const fuse = new Fuse(searchTargets, options);
-
-    const relevantTags = [];
-
-    for (const tag of allTags) {
-        const searchResults = fuse.search(tag);
-        const additionalTags = searchResults.map(result => result.item);
-
-        if (additionalTags.length > 0) {
-            relevantTags.push(tag);
-        }
-    }
-    return relevantTags;
-}
+const synonymsCache: Map<string, string[]> = new Map<string, string[]>();
 
 export default async function (fastify: FastifyInstance) {
+    function fuzzySearchTagsFromText(title: string, content: string, allTags: any, threshold: number) {
+        const searchTargets = [title, ...content.split(" ")];
+        const options = {
+            shouldSort: true,
+            includeScore: true,
+            isCaseSensitive: true,
+            threshold: threshold,
+            ignoreLocation: true,
+        };
+        const fuse = new Fuse(searchTargets, options);
+
+        const relevantTags: string[] = [];
+
+        if (allTags instanceof Map) {
+            // We are dealing with a map of synonyms
+            allTags.forEach((synonymTags, tag) => {
+                for (const synonymTag of synonymTags) {
+                    const searchResults = fuse.search(synonymTag);
+                    const additionalTags = searchResults.map(result => result.item);
+
+                    if (additionalTags.length > 0) {
+                        fastify.log.info(`Found synonym "${synonymTag}" for tag "${tag}"`);
+                        // Push actual tag instead of synonym
+                        relevantTags.push(tag);
+                        // Synonym found, no need to check other synonyms
+                        break;
+                    }
+                }
+            });
+
+            return relevantTags;
+        }
+
+        for (const tag of allTags) {
+            const searchResults = fuse.search(tag);
+            const additionalTags = searchResults.map(result => result.item);
+
+            if (additionalTags.length > 0) {
+                relevantTags.push(tag);
+            }
+        }
+
+        return relevantTags;
+    }
+
+    async function getSynonyms(word: string): Promise<string[]> {
+        const fromCache = synonymsCache.get(word);
+        if (fromCache) {
+            fastify.log.info(`Synonyms for ${word} found in cache: ${fromCache}`);
+            return fromCache;
+        }
+
+        const apiUrl = `https://www.openthesaurus.de/synonyme/search?q=${encodeURIComponent(
+            word,
+        )}&format=application/json`;
+
+        try {
+            const response = await axios.get(apiUrl);
+            const data = response.data;
+            const synonyms = data.synsets.flatMap((synset: any) => synset.terms.map((term: any) => term.term));
+
+            synonymsCache.set(word, synonyms);
+
+            return synonyms;
+        } catch (error) {
+            throw new Error("Failed to fetch synonyms");
+        }
+    }
+
+    async function getAllSynonyms(words: string[]): Promise<Map<string, string[]>> {
+        const synonymsMap = new Map<string, string[]>();
+
+        const synonymsPromises = words.map(async word => {
+            return getSynonyms(word).then(synonyms => {
+                synonymsMap.set(word, synonyms);
+            });
+        });
+
+        if (words.length >= 59) {
+            // Delay for 1 second between each request (because of API rate limit)
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        } else {
+            await Promise.all(synonymsPromises);
+        }
+
+        return synonymsMap;
+    }
+
     const { prisma } = fastify;
 
     fastify.post<{ Body: NewsBodyType }>(
@@ -61,8 +128,19 @@ export default async function (fastify: FastifyInstance) {
             });
             const allTags = allTagsData.map(tagData => tagData.value);
 
-            const fuzzySearchTagsFromText1 = fuzzySearchTagsFromText(title, content, allTags);
-            fastify.log.info(`fuzzySearchTagsFromText: ${fuzzySearchTagsFromText1}`);
+            const fuzzySearchTags = fuzzySearchTagsFromText(title, content, allTags, 0.2);
+            fastify.log.info(`fuzzySearchTags: ${fuzzySearchTags}`);
+
+            const synonymTags = await getAllSynonyms(allTags).catch(err => {
+                fastify.log.error(err);
+            });
+            const fuzzySearchSynonymTags = fuzzySearchTagsFromText(title, content, synonymTags, 0.1);
+            fastify.log.info(`fuzzySearchSynonymTags: ${fuzzySearchSynonymTags}`);
+
+            let finalTags = [...fuzzySearchTags, ...fuzzySearchSynonymTags, ...tags];
+            // Remove duplicates
+            finalTags = [...new Set(finalTags)];
+            fastify.log.info(`finalTags: ${finalTags}`);
 
             const channelsToTag = await prisma.user.findMany({
                 select: {
@@ -77,7 +155,7 @@ export default async function (fastify: FastifyInstance) {
                     tags: {
                         some: {
                             value: {
-                                in: [...fuzzySearchTagsFromText1, ...tags],
+                                in: finalTags,
                             },
                         },
                     },
@@ -104,7 +182,7 @@ export default async function (fastify: FastifyInstance) {
                             headers: {
                                 "Content-Type": "application/json",
                             },
-                            timeout: 3000,
+                            timeout: 10000,
                         });
 
                         if (result.status == 200) {

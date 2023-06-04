@@ -1,0 +1,20 @@
+@startuml
+ (*)-down> "<size:20>Phase 1: Fuzzy Search</size>
+In der Nachricht und Titel wird nach allen Tags gesucht.
+Es wird eine Fuzzy (unscharfe) Suche verwendet.
+" as A1
+
+A1 --> "<size:20>Phase 1: Fuzzy Thesaurus Search</size>
+        In der Nachricht und Titel wird nach Synonymen für jedes Tag gesucht.
+        Es handelt sich ebenfalls um eine (strengere) Fuzzy Search.
+        " as A2
+
+A2 --> "<size:20>Phase 3: LDAP</size>
+     Die Nachricht kann zusätzlich mit Organisation-Tags versehen werden.
+     Anhand der LDAP-Information aller Benutzer werden noch betroffene Benutzer ermittelt.
+     ?? Parallekstruktur oder Tag mit Flag?
+     ?? Welche LDAP Daten haben wir überhaupt?
+     ?? Wann werden Tags/Parallelstruktureinträge daraus erstellt?
+     ?? Sollte beim User automatisch als subscribed Tag gesetzt werden
+      " as A3
+@enduml

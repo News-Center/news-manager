@@ -1,5 +1,21 @@
 @startuml
- (*)-down> "<size:20>Phase 1: Fuzzy Search</size>
+!define CENTER_FOOTER center footer
+!define CENTER_HEADER center header
+!define CENTER_HEADER center title
+!define CENTER_HEADER center note
+
+header "InnoLab News-Center"
+title  "Tag-Erkennung Workflow"
+note right
+Jede Phase liefert eine Liste an gefundenen Tags.
+end note
+
+
+ (*)-down> "<size:20>Phase 0: Initial Selection</size>
+Die vom User ausgewählten Tags werden unverändert übernommen.
+" as A0
+
+A0 --> "<size:20>Phase 1: Fuzzy Search</size>
 In der Nachricht und Titel wird nach allen Tags gesucht.
 Es wird eine Fuzzy (unscharfe) Suche verwendet.
 " as A1
@@ -9,12 +25,21 @@ A1 --> "<size:20>Phase 1: Fuzzy Thesaurus Search</size>
         Es handelt sich ebenfalls um eine (strengere) Fuzzy Search.
         " as A2
 
-A2 --> "<size:20>Phase 3: LDAP</size>
-     Die Nachricht kann zusätzlich mit Organisation-Tags versehen werden.
-     Anhand der LDAP-Information aller Benutzer werden noch betroffene Benutzer ermittelt.
-     ?? Parallekstruktur oder Tag mit Flag?
-     ?? Welche LDAP Daten haben wir überhaupt?
-     ?? Wann werden Tags/Parallelstruktureinträge daraus erstellt?
-     ?? Sollte beim User automatisch als subscribed Tag gesetzt werden
+A2 --> "<size:20>Phase 3: Fuzzy LDAP Search</size>
+    In der Nachricht und Titel wird nach allen LDAP-Tags gesucht.
+    Die LDAP-Tags werden aktuell beim erstmaligen User-Login erstellt,
+    da wir OUs nur auf Userbasis erhalten.
       " as A3
+
+A3 --> "<size:20>Phase 4: Fuzzy LDAP Synonym Search</size>
+   In der Nachricht und Titel wird nach Synonymen für
+   jedes LDAP-Tag gesucht.
+      " as A4
+
+A4 --> "<size:20>Phase 5: Merge</size>
+   Die Tags, die in den einzelnen Phasen gefunden wurden,
+    werden zusammengeführt.
+      " as A5
+
+
 @enduml

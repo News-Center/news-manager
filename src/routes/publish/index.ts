@@ -121,9 +121,13 @@ export default async function (fastify: FastifyInstance) {
                 handle: "",
             };
 
+            // Exclude ldapTags from initial detection
             const allTagsData = await prisma.tag.findMany({
                 select: {
                     value: true,
+                },
+                where: {
+                    isLdap: false,
                 },
             });
             const allTags = allTagsData.map(tagData => tagData.value);
@@ -137,7 +141,33 @@ export default async function (fastify: FastifyInstance) {
             const fuzzySearchSynonymTags = fuzzySearchTagsFromText(title, content, synonymTags, 0.1);
             fastify.log.info(`fuzzySearchSynonymTags: ${fuzzySearchSynonymTags}`);
 
-            let finalTags = [...fuzzySearchTags, ...fuzzySearchSynonymTags, ...tags];
+            // Include ldapTags and their synonyms in a separate detection
+            const ldapTagsData = await prisma.tag.findMany({
+                select: {
+                    value: true,
+                },
+                where: {
+                    isLdap: true,
+                },
+            });
+            const ldapTags = ldapTagsData.map(tagData => tagData.value);
+
+            const fuzzySearchLdapTags = fuzzySearchTagsFromText(title, content, ldapTags, 0.1);
+            fastify.log.info(`fuzzySearchLdapTags: ${fuzzySearchLdapTags}`);
+
+            const synonymLdapTags = await getAllSynonyms(ldapTags).catch(err => {
+                fastify.log.error(err);
+            });
+            const fuzzySearchSynonymLdapTags = fuzzySearchTagsFromText(title, content, synonymLdapTags, 0.1);
+            fastify.log.info(`fuzzySearchSynonymLdapTags: ${fuzzySearchSynonymLdapTags}`);
+
+            let finalTags = [
+                ...fuzzySearchLdapTags,
+                ...fuzzySearchSynonymLdapTags,
+                ...fuzzySearchSynonymTags,
+                ...fuzzySearchTags,
+                ...tags,
+            ];
             // Remove duplicates
             finalTags = [...new Set(finalTags)];
             fastify.log.info(`finalTags: ${finalTags}`);

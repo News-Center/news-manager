@@ -112,7 +112,8 @@ export default async function (fastify: FastifyInstance) {
             },
         },
         async (request, reply) => {
-            const { title, content, tags } = request.body;
+            const { title, content, tags, creatorId } = request.body;
+            fastify.log.info(`News with creatorId: ${creatorId}`);
 
             const payload = {
                 title,

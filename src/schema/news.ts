@@ -5,6 +5,7 @@ export const NewsSchema = Type.Object({
     content: Type.String(),
     tags: Type.Union([Type.Array(Type.String()), Type.Undefined()]),
     creatorId: Type.String(),
+    creationDate: Type.Date(),
 });
 
 export type NewsType = Static<typeof NewsSchema>;
@@ -14,6 +15,7 @@ export const NewsBodySchema = Type.Object({
     content: Type.String(),
     tags: Type.Array(Type.String()),
     creatorId: Type.String(),
+    creationDate: Type.Date(),
 });
 
 export type NewsBodyType = Static<typeof NewsBodySchema>;

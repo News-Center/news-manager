@@ -7,6 +7,38 @@ import { NewsBodyType, NewsResponseSchema } from "../../schema/news";
 const synonymsCache: Map<string, string[]> = new Map<string, string[]>();
 
 export default async function (fastify: FastifyInstance) {
+    // function scheduleDelivery(channelsToTag: any, payload: any, url: string) {
+    //     let startDate: Date = channelsToTag.startDate;
+    //     let endDate: Date = channelsToTag.endDate;
+    //
+    //     let startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
+    //     let endMinutes = endDate.getHours() * 60 + endDate.getMinutes();
+    //
+    //     let timeToSendMinutes = Math.floor(Math.random() * (endMinutes - startMinutes + 1) + startMinutes)
+    //     let hours = Math.floor(timeToSendMinutes / 60);
+    //     let minutes = timeToSendMinutes % 60;
+    //
+    //     schedule.scheduleJob(minutes + ' ' + hours + ' * * *', function () {
+    //         sendMessage(url, payload);
+    //     });
+    //
+    //     async function sendMessage(url: string, payload: any) {
+    //         const result = await axios.post(url, JSON.stringify(payload), {
+    //             headers: {
+    //                 "Content-Type": "application/json",
+    //             },
+    //             timeout: 10000,
+    //         });
+    //
+    //         if (result.status == 200) {
+    //             const msg = `Published message to ${payload.handle}`;
+    //             fastify.log.info(msg);
+    //         } else {
+    //             fastify.log.warn(`Status code was not 200: ${result.status}`);
+    //         }
+    //     }
+    // }
+
     function fuzzySearchTagsFromText(title: string, content: string, allTags: any, threshold: number) {
         const searchTargets = [title, ...content.split(" ")];
         const options = {
@@ -97,6 +129,108 @@ export default async function (fastify: FastifyInstance) {
 
     const { prisma } = fastify;
 
+    const removeDuplicates = (users: any[]) => {
+        const seen = new Set();
+        const uniqueUsers = [];
+        for (const user of users.flat()) {
+            if (!seen.has(user.id)) {
+                seen.add(user.id);
+                uniqueUsers.push(user);
+            }
+        }
+        return uniqueUsers;
+    };
+
+    const fetchPhases = async () => {
+        try {
+            const response = await axios.get("http://user_api:8080/api/v1/phase");
+            const phases = response.data.phases;
+
+            if (phases.length !== 4) {
+                throw new Error("There must be exactly 4 phases");
+            }
+
+            return phases;
+        } catch (error) {
+            fastify.log.error(error);
+            throw error;
+        }
+    };
+
+    async function retrieveUsersForPhase(tags: string[], phaseId: number) {
+        const channelsToTagByPhase = [];
+
+        const users = await prisma.user.findMany({
+            select: {
+                channels: {
+                    select: {
+                        handle: true,
+                        channel: true,
+                    },
+                },
+            },
+            where: {
+                tags: {
+                    some: {
+                        value: {
+                            in: tags,
+                        },
+                    },
+                },
+                phases: {
+                    some: {
+                        id: {
+                            in: phaseId,
+                        },
+                    },
+                },
+            },
+        });
+        if (users.length > 0) {
+            channelsToTagByPhase.push(users);
+        }
+
+        return channelsToTagByPhase;
+    }
+
+    async function getNormalUsers(tags: string[]) {
+        return await prisma.user.findMany({
+            select: {
+                channels: {
+                    select: {
+                        handle: true,
+                        channel: true,
+                    },
+                },
+            },
+            where: {
+                tags: {
+                    some: {
+                        value: {
+                            in: tags,
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    async function getUsersFromPhases(tagsForPhase: Map<number, string[]>) {
+        const phases = await fetchPhases();
+        const usersFromPhases = [];
+
+        for (const phase of phases) {
+            if (tagsForPhase.has(phase.id)) {
+                const tags = tagsForPhase.get(phase.id) as string[];
+
+                const phaseUsers = await retrieveUsersForPhase(tags, phase.id);
+                fastify.log.info(`Users found in phase ${phase.id}: ${phaseUsers.length}`);
+                usersFromPhases.push(phaseUsers);
+            }
+        }
+        return usersFromPhases;
+    }
+
     fastify.post<{ Body: NewsBodyType }>(
         "/",
         {
@@ -134,12 +268,14 @@ export default async function (fastify: FastifyInstance) {
             });
             const allTags = allTagsData.map(tagData => tagData.value);
 
+            // Phase with ID 1
             const fuzzySearchTags = fuzzySearchTagsFromText(title, content, allTags, 0.2);
             fastify.log.info(`fuzzySearchTags: ${fuzzySearchTags}`);
 
             const synonymTags = await getAllSynonyms(allTags).catch(err => {
                 fastify.log.error(err);
             });
+            // Phase with ID 2
             const fuzzySearchSynonymTags = fuzzySearchTagsFromText(title, content, synonymTags, 0.1);
             fastify.log.info(`fuzzySearchSynonymTags: ${fuzzySearchSynonymTags}`);
 
@@ -154,12 +290,14 @@ export default async function (fastify: FastifyInstance) {
             });
             const ldapTags = ldapTagsData.map(tagData => tagData.value);
 
+            // Phase with ID 3
             const fuzzySearchLdapTags = fuzzySearchTagsFromText(title, content, ldapTags, 0.1);
             fastify.log.info(`fuzzySearchLdapTags: ${fuzzySearchLdapTags}`);
 
             const synonymLdapTags = await getAllSynonyms(ldapTags).catch(err => {
                 fastify.log.error(err);
             });
+            // Phase with ID 4
             const fuzzySearchSynonymLdapTags = fuzzySearchTagsFromText(title, content, synonymLdapTags, 0.1);
             fastify.log.info(`fuzzySearchSynonymLdapTags: ${fuzzySearchSynonymLdapTags}`);
 
@@ -170,29 +308,30 @@ export default async function (fastify: FastifyInstance) {
                 ...fuzzySearchTags,
                 ...tags,
             ];
+
             // Remove duplicates
             finalTags = [...new Set(finalTags)];
             fastify.log.info(`finalTags: ${finalTags}`);
 
-            const channelsToTag = await prisma.user.findMany({
-                select: {
-                    channels: {
-                        select: {
-                            handle: true,
-                            channel: true,
-                        },
-                    },
-                },
-                where: {
-                    tags: {
-                        some: {
-                            value: {
-                                in: finalTags,
-                            },
-                        },
-                    },
-                },
-            });
+            const users = await getNormalUsers(tags);
+            fastify.log.info(`=======================`);
+            fastify.log.info(`Normal users: ${users.length}`);
+
+            // Map phase ID to tags
+            const tagsForPhase: Map<number, string[]> = new Map<number, string[]>([
+                [1, fuzzySearchTags],
+                [2, fuzzySearchSynonymTags],
+                [3, fuzzySearchLdapTags],
+                [4, fuzzySearchSynonymLdapTags],
+            ]);
+
+            const usersFromPhases = await getUsersFromPhases(tagsForPhase);
+
+            const allChannelsToTagByPhase = [...new Set([...users, ...usersFromPhases])];
+            const channelsToTag = removeDuplicates(allChannelsToTagByPhase);
+
+            fastify.log.info(`channelsToTag: ${channelsToTag.length}`);
+            fastify.log.info(`=======================`);
 
             const handlers = [];
 
@@ -207,6 +346,8 @@ export default async function (fastify: FastifyInstance) {
 
                         payload.handle = handle;
 
+                        // scheduleDelivery(channelsToTag, payload, channelUrl);
+                        //
                         const url = channelUrl + "/publish";
                         fastify.log.info(`POST to: ${url}`);
 
@@ -230,6 +371,7 @@ export default async function (fastify: FastifyInstance) {
                 return reply.status(200).send({ receivers: handlers });
             } catch (err: unknown) {
                 if (err instanceof Error) {
+                    err.stack && fastify.log.error(err.stack);
                     fastify.log.error(`Error publishing message: ${err.message}`);
                 } else fastify.log.error("Error publishing");
 

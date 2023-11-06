@@ -21,7 +21,19 @@ model User {
   id       Int @id @default(autoincrement())
   username String @unique
   tags      Tag[]
+  autoSubscribe Boolean @default(false)
+  preferredStartTime DateTime @db.Time(1) @default("2023-11-04T00:00:00+00:00")
+  preferredEndTime DateTime @db.Time(1) @default("2023-11-04T23:00:00+00:00")
+  phases   Phase[]
   channels UserOnChannel[]
+}
+
+model Phase {
+  id       Int             @id @default(autoincrement())
+  name String          @unique
+  description String
+  createdAt DateTime @default(now())
+  users User[]
 }
 
 model Channel {

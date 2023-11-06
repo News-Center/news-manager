@@ -98,7 +98,8 @@ export default async function (fastify: FastifyInstance) {
         try {
             const response = await axios.get(apiUrl);
             const data = response.data;
-            const synonyms = data.synsets.flatMap((synset: any) => synset.terms.map((term: any) => term.term));
+            let synonyms = data.synsets.flatMap((synset: any) => synset.terms.map((term: any) => term.term));
+            synonyms = synonyms.map((synonym: string) => synonym.toLowerCase());
 
             synonymsCache.set(word, synonyms);
 
@@ -147,7 +148,7 @@ export default async function (fastify: FastifyInstance) {
             const phases = response.data.phases;
 
             if (phases.length !== 4) {
-                throw new Error("There must be exactly 4 phases");
+                throw new Error("There must be exactly 4 phases. Implement 4 phases!");
             }
 
             return phases;
@@ -270,15 +271,17 @@ export default async function (fastify: FastifyInstance) {
 
             // Phase with ID 1
             const fuzzySearchTags = fuzzySearchTagsFromText(title, content, allTags, 0.2);
-            fastify.log.info(`fuzzySearchTags: ${fuzzySearchTags}`);
+            fastify.log.info(`Phase 1: fuzzySearchTags: ${fuzzySearchTags}`);
 
+            // Phase with ID 2
             const synonymTags = await getAllSynonyms(allTags).catch(err => {
                 fastify.log.error(err);
             });
-            // Phase with ID 2
-            const fuzzySearchSynonymTags = fuzzySearchTagsFromText(title, content, synonymTags, 0.1);
-            fastify.log.info(`fuzzySearchSynonymTags: ${fuzzySearchSynonymTags}`);
+            let fuzzySearchSynonymTags = fuzzySearchTagsFromText(title, content, synonymTags, 0.1);
+            fuzzySearchSynonymTags = fuzzySearchSynonymTags.map(tag => tag.toLowerCase());
+            fastify.log.info(`Phase 2: fuzzySearchSynonymTags: ${fuzzySearchSynonymTags}`);
 
+            // Phase with ID 3
             // Include ldapTags and their synonyms in a separate detection
             const ldapTagsData = await prisma.tag.findMany({
                 select: {
@@ -288,18 +291,19 @@ export default async function (fastify: FastifyInstance) {
                     isLdap: true,
                 },
             });
+
             const ldapTags = ldapTagsData.map(tagData => tagData.value);
 
-            // Phase with ID 3
             const fuzzySearchLdapTags = fuzzySearchTagsFromText(title, content, ldapTags, 0.1);
-            fastify.log.info(`fuzzySearchLdapTags: ${fuzzySearchLdapTags}`);
+            fastify.log.info(`Phase 3: fuzzySearchLdapTags: ${fuzzySearchLdapTags}`);
 
+            // Phase with ID 4
             const synonymLdapTags = await getAllSynonyms(ldapTags).catch(err => {
                 fastify.log.error(err);
             });
-            // Phase with ID 4
-            const fuzzySearchSynonymLdapTags = fuzzySearchTagsFromText(title, content, synonymLdapTags, 0.1);
-            fastify.log.info(`fuzzySearchSynonymLdapTags: ${fuzzySearchSynonymLdapTags}`);
+            let fuzzySearchSynonymLdapTags = fuzzySearchTagsFromText(title, content, synonymLdapTags, 0.1);
+            fuzzySearchSynonymLdapTags = fuzzySearchSynonymLdapTags.map(tag => tag.toLowerCase());
+            fastify.log.info(`Phase 4: fuzzySearchSynonymLdapTags: ${fuzzySearchSynonymLdapTags}`);
 
             let finalTags = [
                 ...fuzzySearchLdapTags,

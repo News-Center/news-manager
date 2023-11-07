@@ -331,10 +331,10 @@ export default async function (fastify: FastifyInstance) {
 
             const usersFromPhases = await getUsersFromPhases(tagsForPhase);
 
-            const allChannelsToTagByPhase = [...new Set([...users, ...usersFromPhases])];
+            const allChannelsToTagByPhase = [...users, ...usersFromPhases];
             const channelsToTag = removeDuplicates(allChannelsToTagByPhase);
 
-            fastify.log.info(`channelsToTag: ${channelsToTag.length}`);
+            fastify.log.info(`Unique final users: ${channelsToTag.length}`);
             fastify.log.info(`=======================`);
 
             const handlers = [];

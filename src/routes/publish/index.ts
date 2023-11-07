@@ -145,13 +145,7 @@ export default async function (fastify: FastifyInstance) {
     const fetchPhases = async () => {
         try {
             const response = await axios.get("http://user_api:8080/api/v1/phase");
-            const phases = response.data.phases;
-
-            if (phases.length !== 4) {
-                throw new Error("There must be exactly 4 phases. Implement 4 phases!");
-            }
-
-            return phases;
+            return response.data.phases;
         } catch (error) {
             fastify.log.error(error);
             throw error;
@@ -216,8 +210,15 @@ export default async function (fastify: FastifyInstance) {
         });
     }
 
-    async function getUsersFromPhases(tagsForPhase: Map<number, string[]>) {
+    async function getUsersFromPhases(tagsForPhase: Map<number, string[]>, amountOfImplementedPhases: number) {
         const phases = await fetchPhases();
+
+        if (phases.length !== amountOfImplementedPhases) {
+            throw new Error(
+                `Amount of implemented phases (${amountOfImplementedPhases}) does not match with the amount of saved phases (${phases.length})!`,
+            );
+        }
+
         const usersFromPhases = [];
 
         for (const phase of phases) {
@@ -329,7 +330,7 @@ export default async function (fastify: FastifyInstance) {
                 [4, fuzzySearchSynonymLdapTags],
             ]);
 
-            const usersFromPhases = await getUsersFromPhases(tagsForPhase);
+            const usersFromPhases = await getUsersFromPhases(tagsForPhase, tagsForPhase.size);
 
             const allChannelsToTagByPhase = [...users, ...usersFromPhases];
             const channelsToTag = removeDuplicates(allChannelsToTagByPhase);

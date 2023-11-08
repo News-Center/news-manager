@@ -1,43 +1,52 @@
 import { FastifyInstance } from "fastify";
 import axios from "axios";
 import Fuse from "fuse.js";
+import schedule from "node-schedule";
 
 import { NewsBodyType, NewsResponseSchema } from "../../schema/news";
 
 const synonymsCache: Map<string, string[]> = new Map<string, string[]>();
 
 export default async function (fastify: FastifyInstance) {
-    // function scheduleDelivery(channelsToTag: any, payload: any, url: string) {
-    //     let startDate: Date = channelsToTag.startDate;
-    //     let endDate: Date = channelsToTag.endDate;
-    //
-    //     let startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
-    //     let endMinutes = endDate.getHours() * 60 + endDate.getMinutes();
-    //
-    //     let timeToSendMinutes = Math.floor(Math.random() * (endMinutes - startMinutes + 1) + startMinutes)
-    //     let hours = Math.floor(timeToSendMinutes / 60);
-    //     let minutes = timeToSendMinutes % 60;
-    //
-    //     schedule.scheduleJob(minutes + ' ' + hours + ' * * *', function () {
-    //         sendMessage(url, payload);
-    //     });
-    //
-    //     async function sendMessage(url: string, payload: any) {
-    //         const result = await axios.post(url, JSON.stringify(payload), {
-    //             headers: {
-    //                 "Content-Type": "application/json",
-    //             },
-    //             timeout: 10000,
-    //         });
-    //
-    //         if (result.status == 200) {
-    //             const msg = `Published message to ${payload.handle}`;
-    //             fastify.log.info(msg);
-    //         } else {
-    //             fastify.log.warn(`Status code was not 200: ${result.status}`);
-    //         }
-    //     }
-    // }
+    async function sendMessage(channelUrl: string, payload: any) {
+        const url = channelUrl + "/publish";
+        fastify.log.info(`POST to: ${url}`);
+
+        const result = await axios.post(url, JSON.stringify(payload), {
+            headers: {
+                "Content-Type": "application/json",
+            },
+            timeout: 10000,
+        });
+
+        if (result.status == 200) {
+            const msg = `Published message to ${payload.handle}`;
+            fastify.log.info(msg);
+        } else {
+            fastify.log.warn(`Status code was not 200: ${result.status}`);
+        }
+    }
+
+    function scheduleDelivery(channelsToTag: any, payload: any, url: string) {
+        fastify.log.info(channelsToTag);
+        const startDate: Date = channelsToTag.preferredStartTime;
+        const endDate: Date = channelsToTag.preferredEndTime;
+
+        const startHours = startDate.getHours();
+        const startMinutes = startDate.getMinutes();
+
+        const endHours = endDate.getHours();
+        const endMinutes = endDate.getMinutes();
+
+        const rndHours = Math.floor(Math.random() * (endHours - startHours + 1) + startHours);
+        const rndMinutes = Math.floor(Math.random() * (endMinutes - startMinutes + 1) + startMinutes);
+
+        fastify.log.info(`Time to deliver message ${rndHours}:${rndMinutes} to ${payload.handle}`);
+
+        schedule.scheduleJob(rndMinutes + " " + rndHours + " * * *", function () {
+            sendMessage(url, payload);
+        });
+    }
 
     function fuzzySearchTagsFromText(title: string, content: string, allTags: any, threshold: number) {
         const searchTargets = [title, ...content.split(" ")];
@@ -218,6 +227,8 @@ export default async function (fastify: FastifyInstance) {
                         channel: true,
                     },
                 },
+                preferredStartTime: true,
+                preferredEndTime: true,
             },
             where: {
                 tags: {
@@ -252,6 +263,8 @@ export default async function (fastify: FastifyInstance) {
                         channel: true,
                     },
                 },
+                preferredStartTime: true,
+                preferredEndTime: true,
             },
             where: {
                 tags: {
@@ -288,6 +301,18 @@ export default async function (fastify: FastifyInstance) {
         return usersFromPhases.flat();
     }
 
+    async function getTagsByIsLdap(isLdap: boolean): Promise<string[]> {
+        const tagsData = await prisma.tag.findMany({
+            select: {
+                value: true,
+            },
+            where: {
+                isLdap,
+            },
+        });
+        return tagsData.map(tagData => tagData.value.toLowerCase());
+    }
+
     fastify.post<{ Body: NewsBodyType }>(
         "/",
         {
@@ -318,15 +343,7 @@ export default async function (fastify: FastifyInstance) {
             };
 
             // Exclude ldapTags from initial detection
-            const allTagsData = await prisma.tag.findMany({
-                select: {
-                    value: true,
-                },
-                where: {
-                    isLdap: false,
-                },
-            });
-            const allTags = allTagsData.map(tagData => tagData.value.toLowerCase());
+            const allTags = await getTagsByIsLdap(false);
 
             // Phase with ID 1
             const fuzzySearchTags = fuzzySearchTagsFromText(title, content, allTags, 0.2);
@@ -343,16 +360,7 @@ export default async function (fastify: FastifyInstance) {
 
             // Phase with ID 3
             // Include ldapTags and their synonyms in a separate detection
-            const ldapTagsData = await prisma.tag.findMany({
-                select: {
-                    value: true,
-                },
-                where: {
-                    isLdap: true,
-                },
-            });
-
-            const ldapTags = ldapTagsData.map(tagData => tagData.value.toLowerCase());
+            const ldapTags = await getTagsByIsLdap(true);
 
             const fuzzySearchLdapTags = fuzzySearchTagsFromText(title, content, ldapTags, 0.1);
             fastify.log.info(`Phase 3: fuzzySearchLdapTags: ${fuzzySearchLdapTags}`);
@@ -393,7 +401,7 @@ export default async function (fastify: FastifyInstance) {
             fastify.log.info(`Normal users: ${users.length}`);
 
             // Map phase ID to tags
-            const tagsForPhase: Map<number, string[]> = new Map<number, string[]>([
+            const tagToPhase: Map<number, string[]> = new Map<number, string[]>([
                 [1, fuzzySearchTags],
                 [2, fuzzySearchSynonymTags],
                 [3, fuzzySearchLdapTags],
@@ -402,7 +410,7 @@ export default async function (fastify: FastifyInstance) {
                 [6, hammingSynonymTags],
             ]);
 
-            const usersFromPhases = await getUsersFromPhases(tagsForPhase, tagsForPhase.size);
+            const usersFromPhases = await getUsersFromPhases(tagToPhase, tagToPhase.size);
 
             const allChannelsToTagByPhase = [...users, ...usersFromPhases].flat();
             const channelsToTag = removeDuplicates(allChannelsToTagByPhase);
@@ -410,11 +418,11 @@ export default async function (fastify: FastifyInstance) {
             fastify.log.info(`Unique final users: ${channelsToTag.length}`);
             fastify.log.info(`=======================`);
 
-            const handlers = [];
             fastify.log.info(`normalUsers: ${JSON.stringify(users)}`);
             fastify.log.info(`usersFromPhases: ${JSON.stringify(users)}`);
             fastify.log.info(`unique channelsToTag: ${JSON.stringify(channelsToTag)}`);
 
+            const handlers = [];
             try {
                 for (let i = 0; i < channelsToTag.length; i++) {
                     const currentChannels = channelsToTag[i].channels;
@@ -431,25 +439,8 @@ export default async function (fastify: FastifyInstance) {
 
                         payload.handle = handle;
 
-                        // scheduleDelivery(channelsToTag, payload, channelUrl);
-                        //
-                        const url = channelUrl + "/publish";
-                        fastify.log.info(`POST to: ${url}`);
-
-                        const result = await axios.post(url, JSON.stringify(payload), {
-                            headers: {
-                                "Content-Type": "application/json",
-                            },
-                            timeout: 10000,
-                        });
-
-                        if (result.status == 200) {
-                            const msg = `Published message to ${payload.handle} via ${currentChannel.channel.name}`;
-                            fastify.log.info(msg);
-                            handlers.push(handle);
-                        } else {
-                            fastify.log.warn(`Status code was not 200: ${result.status}`);
-                        }
+                        scheduleDelivery(channelsToTag[i], payload, channelUrl);
+                        handlers.push(handle);
                     }
                 }
 

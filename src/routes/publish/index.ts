@@ -288,6 +288,53 @@ export default async function (fastify: FastifyInstance) {
         return usersFromPhases.flat();
     }
 
+    async function getTagsByIsLdap(isLdap: boolean): Promise<string[]> {
+        const tagsData = await prisma.tag.findMany({
+            select: {
+                value: true,
+            },
+            where: {
+                isLdap,
+            },
+        });
+        return tagsData.map(tagData => tagData.value.toLowerCase());
+    }
+
+    type SearchFunction = (
+        title: string,
+        content: string,
+        tags: string[] | Map<string, string[]>,
+        threshold: number,
+    ) => string[];
+    function runSearchPhase(
+        title: string,
+        content: string,
+        tags: string[] | Map<string, string[]>,
+        threshold: number,
+        searchFunction: SearchFunction,
+    ): string[] {
+        const result = searchFunction(title, content, tags, threshold);
+        return result.map(r => r.toLowerCase());
+    }
+
+    function searchAndLogResults(
+        title: string,
+        content: string,
+        tags: string[] | Map<string, string[]>,
+        threshold: number,
+        phaseName: string,
+        searchFunction: SearchFunction,
+    ) {
+        try {
+            const result = runSearchPhase(title, content, tags, threshold, searchFunction);
+            fastify.log.info(`${phaseName}: ${result}`);
+            return result;
+        } catch (error) {
+            fastify.log.error(error);
+            return [];
+        }
+    }
+
     fastify.post<{ Body: NewsBodyType }>(
         "/",
         {
@@ -318,71 +365,61 @@ export default async function (fastify: FastifyInstance) {
             };
 
             // Exclude ldapTags from initial detection
-            const allTagsData = await prisma.tag.findMany({
-                select: {
-                    value: true,
-                },
-                where: {
-                    isLdap: false,
-                },
-            });
-            const allTags = allTagsData.map(tagData => tagData.value.toLowerCase());
+            const allTags = await getTagsByIsLdap(false);
 
-            // Phase with ID 1
-            const fuzzySearchTags = fuzzySearchTagsFromText(title, content, allTags, 0.2);
-            fastify.log.info(`Phase 1: fuzzySearchTags: ${fuzzySearchTags}`);
-
-            // Phase with ID 2
             const synonymTags = await getAllSynonyms(allTags).catch(err => {
                 fastify.log.error(err);
                 return [];
             });
-            let fuzzySearchSynonymTags = fuzzySearchTagsFromText(title, content, synonymTags, 0.1);
-            fuzzySearchSynonymTags = fuzzySearchSynonymTags.map(tag => tag.toLowerCase());
-            fastify.log.info(`Phase 2: fuzzySearchSynonymTags: ${fuzzySearchSynonymTags}`);
 
-            // Phase with ID 3
             // Include ldapTags and their synonyms in a separate detection
-            const ldapTagsData = await prisma.tag.findMany({
-                select: {
-                    value: true,
-                },
-                where: {
-                    isLdap: true,
-                },
-            });
+            const ldapTags = await getTagsByIsLdap(true);
 
-            const ldapTags = ldapTagsData.map(tagData => tagData.value.toLowerCase());
-
-            const fuzzySearchLdapTags = fuzzySearchTagsFromText(title, content, ldapTags, 0.1);
-            fastify.log.info(`Phase 3: fuzzySearchLdapTags: ${fuzzySearchLdapTags}`);
-
-            // Phase with ID 4
             const synonymLdapTags = await getAllSynonyms(ldapTags).catch(err => {
                 fastify.log.error(err);
+                return [];
             });
-            let fuzzySearchSynonymLdapTags = fuzzySearchTagsFromText(title, content, synonymLdapTags, 0.1);
-            fuzzySearchSynonymLdapTags = fuzzySearchSynonymLdapTags.map(tag => tag.toLowerCase());
-            fastify.log.info(`Phase 4: fuzzySearchSynonymLdapTags: ${fuzzySearchSynonymLdapTags}`);
 
-            // Phase with ID 5
-            const hammingTags = searchTagsFromTextWithHamming(title, content, allTags, 1);
-            fastify.log.info(`Phase 5: hammingTags: ${hammingTags}`);
-
-            // Phase with ID 6
-            let hammingSynonymTags = searchTagsFromTextWithHamming(title, content, synonymTags, 1);
-            hammingSynonymTags = hammingSynonymTags.map(tag => tag.toLowerCase());
-            fastify.log.info(`Phase 6: hammingSynonymTags: ${fuzzySearchSynonymTags}`);
-
-            let finalTags = [
-                ...fuzzySearchLdapTags,
-                ...fuzzySearchSynonymLdapTags,
-                ...fuzzySearchSynonymTags,
-                ...fuzzySearchTags,
-                ...hammingTags,
-                ...hammingSynonymTags,
-                ...tags,
+            const searchTasks = [
+                searchAndLogResults(title, content, allTags, 0.2, "Phase 1: fuzzySearchTags", fuzzySearchTagsFromText),
+                searchAndLogResults(
+                    title,
+                    content,
+                    synonymTags,
+                    0.1,
+                    "Phase 2: fuzzyySearchSynoymTags",
+                    fuzzySearchTagsFromText,
+                ),
+                searchAndLogResults(
+                    title,
+                    content,
+                    ldapTags,
+                    0.1,
+                    "Phase 3: fuzzySearchLdapTags",
+                    fuzzySearchTagsFromText,
+                ),
+                searchAndLogResults(
+                    title,
+                    content,
+                    synonymLdapTags,
+                    0.1,
+                    "Phase 4: fuzzySearchSynonymLdapTags",
+                    fuzzySearchTagsFromText,
+                ),
+                searchAndLogResults(title, content, allTags, 1, "Phase 5: hammingTags", searchTagsFromTextWithHamming),
+                searchAndLogResults(
+                    title,
+                    content,
+                    synonymTags,
+                    1,
+                    "Phase 6: hammingSynonymTags",
+                    searchTagsFromTextWithHamming,
+                ),
             ];
+
+            const results = await Promise.all(searchTasks);
+
+            let finalTags = results.flat();
 
             // Remove duplicates
             finalTags = [...new Set(finalTags)];
@@ -393,16 +430,16 @@ export default async function (fastify: FastifyInstance) {
             fastify.log.info(`Normal users: ${users.length}`);
 
             // Map phase ID to tags
-            const tagsForPhase: Map<number, string[]> = new Map<number, string[]>([
-                [1, fuzzySearchTags],
-                [2, fuzzySearchSynonymTags],
-                [3, fuzzySearchLdapTags],
-                [4, fuzzySearchSynonymLdapTags],
-                [5, hammingTags],
-                [6, hammingSynonymTags],
+            const tagToPhase: Map<number, string[]> = new Map<number, string[]>([
+                [1, results[0]],
+                [2, results[1]],
+                [3, results[2]],
+                [4, results[3]],
+                [5, results[4]],
+                [6, results[5]],
             ]);
 
-            const usersFromPhases = await getUsersFromPhases(tagsForPhase, tagsForPhase.size);
+            const usersFromPhases = await getUsersFromPhases(tagToPhase, tagToPhase.size);
 
             const allChannelsToTagByPhase = [...users, ...usersFromPhases].flat();
             const channelsToTag = removeDuplicates(allChannelsToTagByPhase);

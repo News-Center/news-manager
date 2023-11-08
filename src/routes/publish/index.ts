@@ -1,43 +1,52 @@
 import { FastifyInstance } from "fastify";
 import axios from "axios";
 import Fuse from "fuse.js";
+import schedule from "node-schedule";
 
 import { NewsBodyType, NewsResponseSchema } from "../../schema/news";
 
 const synonymsCache: Map<string, string[]> = new Map<string, string[]>();
 
 export default async function (fastify: FastifyInstance) {
-    // function scheduleDelivery(channelsToTag: any, payload: any, url: string) {
-    //     let startDate: Date = channelsToTag.startDate;
-    //     let endDate: Date = channelsToTag.endDate;
-    //
-    //     let startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
-    //     let endMinutes = endDate.getHours() * 60 + endDate.getMinutes();
-    //
-    //     let timeToSendMinutes = Math.floor(Math.random() * (endMinutes - startMinutes + 1) + startMinutes)
-    //     let hours = Math.floor(timeToSendMinutes / 60);
-    //     let minutes = timeToSendMinutes % 60;
-    //
-    //     schedule.scheduleJob(minutes + ' ' + hours + ' * * *', function () {
-    //         sendMessage(url, payload);
-    //     });
-    //
-    //     async function sendMessage(url: string, payload: any) {
-    //         const result = await axios.post(url, JSON.stringify(payload), {
-    //             headers: {
-    //                 "Content-Type": "application/json",
-    //             },
-    //             timeout: 10000,
-    //         });
-    //
-    //         if (result.status == 200) {
-    //             const msg = `Published message to ${payload.handle}`;
-    //             fastify.log.info(msg);
-    //         } else {
-    //             fastify.log.warn(`Status code was not 200: ${result.status}`);
-    //         }
-    //     }
-    // }
+    async function sendMessage(channelUrl: string, payload: any) {
+        const url = channelUrl + "/publish";
+        fastify.log.info(`POST to: ${url}`);
+
+        const result = await axios.post(url, JSON.stringify(payload), {
+            headers: {
+                "Content-Type": "application/json",
+            },
+            timeout: 10000,
+        });
+
+        if (result.status == 200) {
+            const msg = `Published message to ${payload.handle}`;
+            fastify.log.info(msg);
+        } else {
+            fastify.log.warn(`Status code was not 200: ${result.status}`);
+        }
+    }
+
+    function scheduleDelivery(channelsToTag: any, payload: any, url: string) {
+        fastify.log.info(channelsToTag);
+        const startDate: Date = channelsToTag.preferredStartTime;
+        const endDate: Date = channelsToTag.preferredEndTime;
+
+        const startHours = startDate.getHours();
+        const startMinutes = startDate.getMinutes();
+
+        const endHours = endDate.getHours();
+        const endMinutes = endDate.getMinutes();
+
+        const rndHours = Math.floor(Math.random() * (endHours - startHours + 1) + startHours);
+        const rndMinutes = Math.floor(Math.random() * (endMinutes - startMinutes + 1) + startMinutes);
+
+        fastify.log.info(`Time to deliver message ${rndHours}:${rndMinutes} to ${payload.handle}`);
+
+        schedule.scheduleJob(rndMinutes + " " + rndHours + " * * *", function () {
+            sendMessage(url, payload);
+        });
+    }
 
     function fuzzySearchTagsFromText(title: string, content: string, allTags: any, threshold: number) {
         const searchTargets = [title, ...content.split(" ")];
@@ -218,6 +227,8 @@ export default async function (fastify: FastifyInstance) {
                         channel: true,
                     },
                 },
+                preferredStartTime: true,
+                preferredEndTime: true,
             },
             where: {
                 tags: {
@@ -252,6 +263,8 @@ export default async function (fastify: FastifyInstance) {
                         channel: true,
                     },
                 },
+                preferredStartTime: true,
+                preferredEndTime: true,
             },
             where: {
                 tags: {
@@ -468,25 +481,8 @@ export default async function (fastify: FastifyInstance) {
 
                         payload.handle = handle;
 
-                        // scheduleDelivery(channelsToTag, payload, channelUrl);
-                        //
-                        const url = channelUrl + "/publish";
-                        fastify.log.info(`POST to: ${url}`);
-
-                        const result = await axios.post(url, JSON.stringify(payload), {
-                            headers: {
-                                "Content-Type": "application/json",
-                            },
-                            timeout: 10000,
-                        });
-
-                        if (result.status == 200) {
-                            const msg = `Published message to ${payload.handle} via ${currentChannel.channel.name}`;
-                            fastify.log.info(msg);
-                            handlers.push(handle);
-                        } else {
-                            fastify.log.warn(`Status code was not 200: ${result.status}`);
-                        }
+                        scheduleDelivery(channelsToTag[i], payload, channelUrl);
+                        handlers.push(handle);
                     }
                 }
 

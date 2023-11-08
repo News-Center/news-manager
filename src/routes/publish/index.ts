@@ -192,6 +192,19 @@ export default async function (fastify: FastifyInstance) {
         return relevantTags;
     }
 
+    function searchTagsFromTextWithAPI(
+        title: string,
+        content: string,
+        allTags: string[] | Map<string, string[]>,
+    ): string[] {
+        const searchTargets = [title, ...content.split(" ")];
+        const relevantTags: string[] = ["bla"];
+
+
+        return relevantTags;
+    }
+
+
     const { prisma } = fastify;
 
     const removeDuplicates = (users: any[]) => {
@@ -382,6 +395,10 @@ export default async function (fastify: FastifyInstance) {
             hammingSynonymTags = hammingSynonymTags.map(tag => tag.toLowerCase());
             fastify.log.info(`Phase 6: hammingSynonymTags: ${fuzzySearchSynonymTags}`);
 
+            // Phase with ID 7
+            let apiTags = searchTagsFromTextWithAPI(title, content, allTags);
+            fastify.log.info(`Phase 7: apiTags: ${apiTags}`);
+
             let finalTags = [
                 ...fuzzySearchLdapTags,
                 ...fuzzySearchSynonymLdapTags,
@@ -389,6 +406,7 @@ export default async function (fastify: FastifyInstance) {
                 ...fuzzySearchTags,
                 ...hammingTags,
                 ...hammingSynonymTags,
+                ...apiTags,
                 ...tags,
             ];
 
@@ -408,6 +426,7 @@ export default async function (fastify: FastifyInstance) {
                 [4, fuzzySearchSynonymLdapTags],
                 [5, hammingTags],
                 [6, hammingSynonymTags],
+                [7, apiTags],
             ]);
 
             const usersFromPhases = await getUsersFromPhases(tagToPhase, tagToPhase.size);

@@ -128,12 +128,67 @@ export default async function (fastify: FastifyInstance) {
         return synonymsMap;
     }
 
+    function hammingDistance(s1: string, s2: string): number {
+        const lengthDifference = Math.abs(s1.length - s2.length);
+
+        let distance = 0;
+        const minLength = Math.min(s1.length, s2.length);
+
+        for (let i = 0; i < minLength; i++) {
+            if (s1[i] !== s2[i]) {
+                distance++;
+            }
+        }
+
+        distance += lengthDifference;
+
+        return distance;
+    }
+
+    function searchTagsFromTextWithHamming(
+        title: string,
+        content: string,
+        allTags: string[] | Map<string, string[]>,
+        threshold: number,
+    ): string[] {
+        const searchTargets = [title, ...content.split(" ")];
+        const relevantTags: string[] = [];
+
+        if (allTags instanceof Map) {
+            // We are dealing with a map of synonyms
+            allTags.forEach((synonymTags, tag) => {
+                for (const synonymTag of synonymTags) {
+                    for (const currentWord of searchTargets) {
+                        if (hammingDistance(synonymTag, currentWord) <= threshold) {
+                            fastify.log.info(`Found synonym "${synonymTag}" for tag "${tag}"`);
+                            relevantTags.push(tag);
+                            break;
+                        }
+                    }
+                }
+            });
+
+            return relevantTags;
+        }
+
+        for (const tag of allTags) {
+            for (const currentWord of searchTargets) {
+                if (hammingDistance(tag, currentWord) <= threshold) {
+                    relevantTags.push(tag);
+                    break;
+                }
+            }
+        }
+
+        return relevantTags;
+    }
+
     const { prisma } = fastify;
 
     const removeDuplicates = (users: any[]) => {
         const seen = new Set();
         const uniqueUsers = [];
-        for (const user of users.flat()) {
+        for (const user of users) {
             if (!seen.has(user.id)) {
                 seen.add(user.id);
                 uniqueUsers.push(user);
@@ -230,7 +285,7 @@ export default async function (fastify: FastifyInstance) {
                 usersFromPhases.push(phaseUsers);
             }
         }
-        return usersFromPhases;
+        return usersFromPhases.flat();
     }
 
     fastify.post<{ Body: NewsBodyType }>(
@@ -248,7 +303,10 @@ export default async function (fastify: FastifyInstance) {
             },
         },
         async (request, reply) => {
-            const { title, content, tags, creatorId, creationDate } = request.body;
+            let { title, content, tags, creatorId, creationDate } = request.body; // eslint-disable-line
+            title = title.toLowerCase();
+            content = content.toLowerCase();
+
             fastify.log.info(`News with creatorId: ${creatorId}`);
             fastify.log.info(`News with creationDate: ${creationDate}`);
 
@@ -268,7 +326,7 @@ export default async function (fastify: FastifyInstance) {
                     isLdap: false,
                 },
             });
-            const allTags = allTagsData.map(tagData => tagData.value);
+            const allTags = allTagsData.map(tagData => tagData.value.toLowerCase());
 
             // Phase with ID 1
             const fuzzySearchTags = fuzzySearchTagsFromText(title, content, allTags, 0.2);
@@ -277,6 +335,7 @@ export default async function (fastify: FastifyInstance) {
             // Phase with ID 2
             const synonymTags = await getAllSynonyms(allTags).catch(err => {
                 fastify.log.error(err);
+                return [];
             });
             let fuzzySearchSynonymTags = fuzzySearchTagsFromText(title, content, synonymTags, 0.1);
             fuzzySearchSynonymTags = fuzzySearchSynonymTags.map(tag => tag.toLowerCase());
@@ -293,7 +352,7 @@ export default async function (fastify: FastifyInstance) {
                 },
             });
 
-            const ldapTags = ldapTagsData.map(tagData => tagData.value);
+            const ldapTags = ldapTagsData.map(tagData => tagData.value.toLowerCase());
 
             const fuzzySearchLdapTags = fuzzySearchTagsFromText(title, content, ldapTags, 0.1);
             fastify.log.info(`Phase 3: fuzzySearchLdapTags: ${fuzzySearchLdapTags}`);
@@ -306,11 +365,22 @@ export default async function (fastify: FastifyInstance) {
             fuzzySearchSynonymLdapTags = fuzzySearchSynonymLdapTags.map(tag => tag.toLowerCase());
             fastify.log.info(`Phase 4: fuzzySearchSynonymLdapTags: ${fuzzySearchSynonymLdapTags}`);
 
+            // Phase with ID 5
+            const hammingTags = searchTagsFromTextWithHamming(title, content, allTags, 1);
+            fastify.log.info(`Phase 5: hammingTags: ${hammingTags}`);
+
+            // Phase with ID 6
+            let hammingSynonymTags = searchTagsFromTextWithHamming(title, content, synonymTags, 1);
+            hammingSynonymTags = hammingSynonymTags.map(tag => tag.toLowerCase());
+            fastify.log.info(`Phase 6: hammingSynonymTags: ${fuzzySearchSynonymTags}`);
+
             let finalTags = [
                 ...fuzzySearchLdapTags,
                 ...fuzzySearchSynonymLdapTags,
                 ...fuzzySearchSynonymTags,
                 ...fuzzySearchTags,
+                ...hammingTags,
+                ...hammingSynonymTags,
                 ...tags,
             ];
 
@@ -328,21 +398,31 @@ export default async function (fastify: FastifyInstance) {
                 [2, fuzzySearchSynonymTags],
                 [3, fuzzySearchLdapTags],
                 [4, fuzzySearchSynonymLdapTags],
+                [5, hammingTags],
+                [6, hammingSynonymTags],
             ]);
 
             const usersFromPhases = await getUsersFromPhases(tagsForPhase, tagsForPhase.size);
 
-            const allChannelsToTagByPhase = [...users, ...usersFromPhases];
+            const allChannelsToTagByPhase = [...users, ...usersFromPhases].flat();
             const channelsToTag = removeDuplicates(allChannelsToTagByPhase);
 
             fastify.log.info(`Unique final users: ${channelsToTag.length}`);
             fastify.log.info(`=======================`);
 
             const handlers = [];
+            fastify.log.info(`normalUsers: ${JSON.stringify(users)}`);
+            fastify.log.info(`usersFromPhases: ${JSON.stringify(users)}`);
+            fastify.log.info(`unique channelsToTag: ${JSON.stringify(channelsToTag)}`);
 
             try {
                 for (let i = 0; i < channelsToTag.length; i++) {
                     const currentChannels = channelsToTag[i].channels;
+                    fastify.log.info(`currentChannels: ${JSON.stringify(currentChannels)}`);
+
+                    if (currentChannels == undefined) {
+                        continue;
+                    }
 
                     for (let j = 0; j < currentChannels.length; j++) {
                         const currentChannel = currentChannels[j];

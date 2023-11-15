@@ -2,8 +2,10 @@ import { FastifyInstance } from "fastify";
 import axios from "axios";
 import Fuse from "fuse.js";
 import schedule from "node-schedule";
-
 import { NewsBodyType, NewsResponseSchema } from "../../schema/news";
+import OpenAI from "openai";
+import "dotenv/config";
+import { Config } from "../../config";
 
 const synonymsCache: Map<string, string[]> = new Map<string, string[]>();
 
@@ -192,18 +194,42 @@ export default async function (fastify: FastifyInstance) {
         return relevantTags;
     }
 
-    function searchTagsFromTextWithAPI(
-        title: string,
-        content: string,
-        allTags: string[] | Map<string, string[]>,
-    ): string[] {
-        const searchTargets = [title, ...content.split(" ")];
-        const relevantTags: string[] = ["bla"];
+    const makeRequestToOpenAI = async (content: string, tags: string[]) => {
+        fastify.log.info(Config.openApiKey);
+        const openAI = new OpenAI({ apiKey: Config.openApiKey });
 
+        const completion = await openAI.chat.completions.create({
+            messages: [
+                {
+                    role: "system",
+                    content:
+                        "Du bist eine Tag Fingunssystem, welches einen Satz auf seinen Kontext analyisert und dann anhand des Kontext dann die besten Tags von den mitgegebenen Tags zurück lieferst, du darfst nur die mitgegbenen Tags benutzen keine eigene Tags zurück geben. Form der Ausgabe: Tags:[tags]",
+                },
+                { role: "user", content: "Der Satz:" + content + "Tags:" + tags },
+            ],
+            model: "gpt-3.5-turbo-0613",
+        });
+
+        return completion.choices[0].message.content;
+    };
+
+    async function searchTagsFromTextWithAPI(title: string, content: string, allTags: string[]): Promise<string[]> {
+        // const searchTargets = [title, ...content.split(" ")];
+        const relevantTags: string[] = [];
+
+        const message = await makeRequestToOpenAI(content, allTags); // await here
+
+        allTags.forEach(tag => {
+            if (message?.includes(tag)) {
+                relevantTags.push(tag.toString());
+            }
+        });
+
+        fastify.log.info(relevantTags + "relevantTags");
+        fastify.log.info("!!!!!!!!!!!!!!!!");
 
         return relevantTags;
     }
-
 
     const { prisma } = fastify;
 
@@ -396,7 +422,7 @@ export default async function (fastify: FastifyInstance) {
             fastify.log.info(`Phase 6: hammingSynonymTags: ${fuzzySearchSynonymTags}`);
 
             // Phase with ID 7
-            let apiTags = searchTagsFromTextWithAPI(title, content, allTags);
+            const apiTags = await searchTagsFromTextWithAPI(title, content, allTags);
             fastify.log.info(`Phase 7: apiTags: ${apiTags}`);
 
             let finalTags = [

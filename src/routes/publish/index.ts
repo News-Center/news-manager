@@ -40,6 +40,10 @@ export default async function (fastify: FastifyInstance) {
         const endHours = endDate.getHours();
         const endMinutes = endDate.getMinutes();
 
+        fastify.log.info(
+            `User has preferred start time: ${startHours}:${startMinutes} and preferred end time: ${endHours}:${endMinutes}`,
+        );
+
         const rndHours = Math.floor(Math.random() * (endHours - startHours + 1) + startHours);
         const rndMinutes = Math.floor(Math.random() * (endMinutes - startMinutes + 1) + startMinutes);
 
@@ -195,7 +199,6 @@ export default async function (fastify: FastifyInstance) {
     }
 
     const makeRequestToOpenAI = async (content: string, tags: string[]) => {
-        fastify.log.info(Config.openApiKey);
         const openAI = new OpenAI({ apiKey: Config.openApiKey });
 
         const completion = await openAI.chat.completions.create({
@@ -203,7 +206,7 @@ export default async function (fastify: FastifyInstance) {
                 {
                     role: "system",
                     content:
-                        "Du bist eine Tag Fingunssystem, welches einen Satz auf seinen Kontext analyisert und dann anhand des Kontext dann die besten Tags von den mitgegebenen Tags zurück lieferst, du darfst nur die mitgegbenen Tags benutzen keine eigene Tags zurück geben. Form der Ausgabe: Tags:[tags]",
+                        "Du bist ein Tag Erkennungssystem, das einen Satz auf seinen Kontext analysiert und dann anhand des Kontextes die zutreffendsten Tags von den mitgegebenen Tags zurückliefert, du darfst nur die mitgegebenen Tags benutzen, keine eigenen Tags erzeugen. Form der Ausgabe: Tags:[tags]",
                 },
                 { role: "user", content: "Der Satz:" + content + "Tags:" + tags },
             ],
@@ -224,9 +227,6 @@ export default async function (fastify: FastifyInstance) {
                 relevantTags.push(tag.toString());
             }
         });
-
-        fastify.log.info(relevantTags + "relevantTags");
-        fastify.log.info("!!!!!!!!!!!!!!!!");
 
         return relevantTags;
     }

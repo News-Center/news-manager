@@ -26,6 +26,7 @@ model User {
   preferredEndTime DateTime @db.Time(1) @default("2023-11-04T23:00:00+00:00")
   phases   Phase[]
   channels UserOnChannel[]
+  likes    String[]
 }
 
 model Phase {

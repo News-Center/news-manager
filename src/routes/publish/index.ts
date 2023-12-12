@@ -266,8 +266,10 @@ export default async function (fastify: FastifyInstance) {
                         channel: true,
                     },
                 },
+                id: true,
                 preferredStartTime: true,
                 preferredEndTime: true,
+                likes: true,
             },
             where: {
                 tags: {
@@ -302,8 +304,10 @@ export default async function (fastify: FastifyInstance) {
                         channel: true,
                     },
                 },
+                id: true,
                 preferredStartTime: true,
                 preferredEndTime: true,
+                likes: true,
             },
             where: {
                 tags: {
@@ -333,7 +337,16 @@ export default async function (fastify: FastifyInstance) {
                 const tags = tagsForPhase.get(phase.id) as string[];
 
                 const phaseUsers = await retrieveUsersForPhase(tags, phase.id);
-                fastify.log.info(`Users found in phase ${phase.id}: ${phaseUsers.length}`);
+
+                let foundEntriesLength = 0;
+                if (phaseUsers.length > 0) {
+                    if (phaseUsers[0].length > 0) {
+                        foundEntriesLength = phaseUsers[0].length;
+                    }
+                }
+
+                fastify.log.info(`Users found in phase ${phase.id}: ${foundEntriesLength}`);
+
                 usersFromPhases.push(phaseUsers);
             }
         }
@@ -350,6 +363,65 @@ export default async function (fastify: FastifyInstance) {
             },
         });
         return tagsData.map(tagData => tagData.value.toLowerCase());
+    }
+
+    async function getUsersByLikedMessages(usersThatWillReceiveNews: any[]) {
+        const allUsers = await prisma.user.findMany({
+            select: {
+                channels: {
+                    select: {
+                        handle: true,
+                        channel: true,
+                    },
+                },
+                id: true,
+                preferredStartTime: true,
+                preferredEndTime: true,
+                likes: true,
+            },
+        });
+
+        const interestedUsers = [];
+
+        for (let i = 0; i < usersThatWillReceiveNews.length; i++) {
+            const userThatWillReceiveNews = usersThatWillReceiveNews[i];
+
+            for (let j = 0; j < allUsers.length; j++) {
+                const user = allUsers[j];
+
+                if (userThatWillReceiveNews.id === user.id) {
+                    // If the user is the same as the user that will receive the news, skip
+                    continue;
+                }
+
+                if (usersThatWillReceiveNews.map((user: any) => user.id).includes(user.id)) {
+                    // If the user is already in the list of users that will receive the news, skip
+                    continue;
+                }
+
+                const commonLikes = user.likes.filter((like: any) => {
+                    if (userThatWillReceiveNews.likes.length === 0) {
+                        return false;
+                    }
+
+                    if (like === null || like === undefined || like === "") {
+                        return false;
+                    }
+
+                    return userThatWillReceiveNews.likes.includes(like);
+                });
+
+                if (commonLikes.length > 0) {
+                    fastify.log.info(
+                        `User ${user.id} has common likes with user ${userThatWillReceiveNews.id}: ${commonLikes}`,
+                    );
+
+                    interestedUsers.push(user);
+                }
+            }
+        }
+
+        return removeDuplicates(interestedUsers);
     }
 
     fastify.post<{ Body: NewsBodyType }>(
@@ -458,19 +530,25 @@ export default async function (fastify: FastifyInstance) {
             const usersFromPhases = await getUsersFromPhases(tagToPhase, tagToPhase.size);
 
             const allChannelsToTagByPhase = [...users, ...usersFromPhases].flat();
-            const channelsToTag = removeDuplicates(allChannelsToTagByPhase);
+            let usersThatWillReceiveNews = removeDuplicates(allChannelsToTagByPhase);
 
-            fastify.log.info(`Unique final users: ${channelsToTag.length}`);
+            // This approach takes into account the likes of the users instead of the tags
+            const interestedUsers = await getUsersByLikedMessages(usersThatWillReceiveNews);
+            fastify.log.info(`Users from common likes: ${interestedUsers.length}`);
+
+            usersThatWillReceiveNews = removeDuplicates([...usersThatWillReceiveNews, ...interestedUsers]);
+
+            fastify.log.info(`Unique final users: ${usersThatWillReceiveNews.length}`);
             fastify.log.info(`=======================`);
 
             fastify.log.info(`normalUsers: ${JSON.stringify(users)}`);
             fastify.log.info(`usersFromPhases: ${JSON.stringify(users)}`);
-            fastify.log.info(`unique channelsToTag: ${JSON.stringify(channelsToTag)}`);
+            fastify.log.info(`unique usersThatWillReceiveNews: ${JSON.stringify(usersThatWillReceiveNews)}`);
 
             const handlers = [];
             try {
-                for (let i = 0; i < channelsToTag.length; i++) {
-                    const currentChannels = channelsToTag[i].channels;
+                for (let i = 0; i < usersThatWillReceiveNews.length; i++) {
+                    const currentChannels = usersThatWillReceiveNews[i].channels;
                     fastify.log.info(`currentChannels: ${JSON.stringify(currentChannels)}`);
 
                     if (currentChannels == undefined) {
@@ -484,7 +562,7 @@ export default async function (fastify: FastifyInstance) {
 
                         payload.handle = handle;
 
-                        scheduleDelivery(channelsToTag[i], payload, channelUrl);
+                        scheduleDelivery(usersThatWillReceiveNews[i], payload, channelUrl);
                         handlers.push(handle);
                     }
                 }

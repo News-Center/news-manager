@@ -1,8 +1,8 @@
 @startuml
 !define CENTER_FOOTER center footer
 !define CENTER_HEADER center header
-!define CENTER_HEADER center title
-!define CENTER_HEADER center note
+!define CENTER_TITLE center title
+!define CENTER_NOTE center note
 
 header "InnoLab News-Center"
 title  "Tag-Erkennung Workflow"
@@ -10,36 +10,49 @@ note right
 Jede Phase liefert eine Liste an gefundenen Tags.
 end note
 
-
- (*)-down> "<size:20>Phase 0: Initial Selection</size>
-Die vom User ausgewählten Tags werden unverändert übernommen.
-" as A0
+(*)-down> "<size:20>Phase 0: Initial Selection</size>
+Die vom Benutzer ausgewählten Tags werden unverändert übernommen." as A0
 
 A0 --> "<size:20>Phase 1: Fuzzy Search</size>
-In der Nachricht und Titel wird nach allen Tags gesucht.
-Es wird eine Fuzzy (unscharfe) Suche verwendet.
-" as A1
+In der Nachricht und im Titel wird nach allen Tags gesucht.
+Dabei wird eine Fuzzy (unscharfe) Suche angewendet." as A1
 
 A1 --> "<size:20>Phase 2: Fuzzy Thesaurus Search</size>
-        In der Nachricht und Titel wird nach Synonymen für jedes Tag gesucht.
-        Es handelt sich ebenfalls um eine (strengere) Fuzzy Search.
-        " as A2
+In der Nachricht und im Titel wird nach Synonymen für jedes Tag gesucht.
+Hierbei handelt es sich ebenfalls um eine (strengere) Fuzzy-Suche." as A2
 
 A2 --> "<size:20>Phase 3: Fuzzy LDAP Search</size>
-    In der Nachricht und Titel wird nach allen LDAP-Tags gesucht.
-    Die LDAP-Tags werden aktuell beim erstmaligen User-Login erstellt,
-    da wir OUs nur auf Userbasis erhalten.
-      " as A3
+In der Nachricht und im Titel wird nach allen LDAP-Tags gesucht.
+Die LDAP-Tags werden aktuell beim erstmaligen Login eines Benutzers erstellt,
+da wir OUs nur auf Benutzerbasis erhalten." as A3
 
 A3 --> "<size:20>Phase 4: Fuzzy LDAP Thesaurus Search</size>
-   In der Nachricht und Titel wird nach Synonymen für
-   jedes LDAP-Tag gesucht.
-      " as A4
+In der Nachricht und im Titel wird nach Synonymen für jedes LDAP-Tag gesucht." as A4
 
-A4 --> "<size:20>Phase 5: Merge</size>
-   Die Tags, die in den einzelnen Phasen gefunden wurden,
-    werden zusammengeführt.
-      " as A5
+A4 --> "<size:20>Phase 5: Hamming-Algorithmus für Tag-Matching</size>
+Der Hamming-Algorithmus wird für das Tag-Matching angewendet.
+Dabei werden die gefundenen Tags anhand der Hamming-Distanz verglichen und gematcht." as A5
 
+A5 --> "<size:20>Phase 6: Hamming-Synonym-Tags für Tag-Matching</size>
+Hamming-Synonym-Tags werden für das Tag-Matching angewendet.
+Ähnlich wie in der vorherigen Synonym-Phase wird nach entsprechenden Synonymen gesucht,
+jedoch unter Verwendung des Hamming-Algorithmus." as A6
+
+A6 --> "<size:20>Phase 7: Externe API (ChatGPT API) für Tag-Matching</size>
+Eine externe API (die ChatGPT API) wird für das Tag-Matching angewendet.
+Hierbei werden die gefundenen Tags mithilfe der externen API abgeglichen und gematcht." as A7
+
+A7 --> "<size:20>Combine All Tags</size>
+Die Tags, die in den einzelnen Phasen gefunden wurden,
+werden zusammengeführt." as A8
+
+A8 --> "<size:20>Phase X: User Likes Matching</size>
+Die Likes der Benutzer werden berücksichtigt.
+Wenn ein Benutzer, der eine Nachricht erhalten würde, gemeinsame Likes
+mit anderen Benutzern hat, erhalten diese anderen Benutzer ebenfalls die Nachricht,
+da ein gemeinsames Interesse erkannt wurde." as A9
+
+A9 -->  "<size:20>Combine All Tags</size>
+Alle Tags werden erneut kombiniert." as A10
 
 @enduml

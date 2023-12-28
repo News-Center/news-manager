@@ -128,7 +128,12 @@ export default async function (fastify: FastifyInstance) {
         const synonymsMap = new Map<string, string[]>();
 
         const synonymsPromises = words.map(async word => {
-            return getSynonyms(word).then(synonyms => {
+            const synonyms1 = getSynonyms(word).catch(() => {
+                fastify.log.warn(`Failed to fetch synonyms for ${word}`);
+                return [];
+            });
+
+            return synonyms1.then(synonyms => {
                 synonymsMap.set(word, synonyms);
             });
         });
@@ -477,7 +482,7 @@ export default async function (fastify: FastifyInstance) {
             fastify.log.info(`Phase 3: fuzzySearchLdapTags: ${fuzzySearchLdapTags}`);
 
             // Phase with ID 4
-            const synonymLdapTags = await getAllSynonyms(ldapTags).catch(err => {
+            const synonymLdapTags = await getAllSynonyms(ldapTags.slice(0, 100)).catch(err => {
                 fastify.log.error(err);
             });
             let fuzzySearchSynonymLdapTags = fuzzySearchTagsFromText(title, content, synonymLdapTags, 0.1);

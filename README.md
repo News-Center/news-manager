@@ -1,8 +1,10 @@
 # General purpose
 
-The news-manager is used to deliver relevant news to the user. It manages the clients/channels of users and delivers
+The `news-manager` is used to deliver relevant news to the user. It manages the clients/channels registration and
+delivers
 news
-after applying a thorough matching algorithm.
+after applying a thorough matching algorithm. Please note that the `user-api` and `news-api` are accessing the same
+database.
 
 ## How it works
 
@@ -26,9 +28,13 @@ debugging.
 
 ### News delivery
 
-The news-manager enables the user to subscribe to clients. Subscribed channels/clients will be
+The news-manager enables the admin to register clients. Subscribed channels/clients will be
 invoked
-for the delivery of news. This service is used by news-api to deliver news to the user. The clients are responsible for
+for the delivery of news. 
+
+_Note: The `user-api` enables the user to subscribe to channels/clients._
+
+This service is used by news-api to deliver news to the user. The clients are responsible for
 delivering
 the actual messages via Discord and so on.
 

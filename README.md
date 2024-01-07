@@ -19,7 +19,7 @@ The mechanism employed to determine the relevance of a message involves a multi-
 message's tags. Subsequently, the liked messages of users are taken into consideration before the messages are
 delivered.
 
-![Tag Recognition Workflow](./tagrecognition-Tag_Erkennung_Workflow.svg =700x)
+![Tag Recognition Workflow](./tagrecognition-Tag_Erkennung_Workflow.svg)
 
 The logic for this is contained in `src/routes/publish/index.ts`. All the phases are logged to the console for easy
 debugging.

@@ -20,7 +20,7 @@ message's tags. Subsequently, the liked messages of users are taken into conside
 delivered.
 
 <p align="center">
-<img src="tagrecognition-Tag_Erkennung_Workflow.svg" width="700">
+<img src="./tagrecognition-Tag_Erkennung_Workflow.svg" width="700">
 </p>
 
 The logic for this is contained in `src/routes/publish/index.ts`. All the phases are logged to the console for easy
